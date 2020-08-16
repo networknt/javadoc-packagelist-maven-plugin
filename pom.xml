@@ -6,7 +6,7 @@
 
     <groupId>com.networknt</groupId>
     <artifactId>javadoc-packagelist-maven-plugin</artifactId>
-    <version>1.0.0</version>
+    <version>1.0.1</version>
     <packaging>maven-plugin</packaging>
     <description>Java doc package-list generator plugin</description>
     <url>https://github.com/networknt/javadoc-packagelist-maven-plugin</url>
