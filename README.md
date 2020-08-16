@@ -10,7 +10,9 @@ As a result, the build log was outputting many errors of the form:
 The build seemed to be only generating the `element-list` file.
 
 To resolve the issue with javadoc links, and remove the errors from the logs, this plugin can be used to generate the `package-list`
-file dynamically based on a scan of the source directories of submodules.
+file dynamically based on a scan of the source directories of submodules. Packages that were excluded by a
+[`excludePackageNames`](https://maven.apache.org/plugins/maven-javadoc-plugin/javadoc-mojo.html#excludePackageNames) in the
+`maven-javadoc-plugin` configuration are not included in the file.
 
 The plugin should be bound to the `package` phase, and included as follows:
 
