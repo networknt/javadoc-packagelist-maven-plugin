@@ -14,9 +14,8 @@ import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.FileUtils;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 
-import java.io.*;
+import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -87,8 +86,8 @@ public class GenPackageList extends AbstractMojo {
                     Xpp3Dom epnDom = configDom.getChild("excludePackageNames");
                     if (epnDom != null) {
                         String excludePackageNames = epnDom.getValue();
-                        if (excludePackageNames != null) {
-                            List<String> excludedList = Arrays.asList(excludePackageNames.split("[,:;]"));
+                        if (excludePackageNames != null && excludePackageNames.length() != 0) {
+                            String[] excludedList = excludePackageNames.split("[,:;]");
                             for (String excludeStr : excludedList) {
                                 String reStr = convertExcludeToRegExp(excludeStr);
                                 try {
