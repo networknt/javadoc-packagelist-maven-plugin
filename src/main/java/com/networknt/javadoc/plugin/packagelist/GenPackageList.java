@@ -31,7 +31,7 @@ public class GenPackageList extends AbstractMojo {
     public void execute() throws MojoExecutionException, MojoFailureException {
         String sourceDir = mavenProject.getModel().getBuild().getSourceDirectory();
         String targetDir = mavenProject.getModel().getBuild().getDirectory();
-        if (mavenProject.getModel().getParent() != null) {
+        if (!"pom".equals(mavenProject.getPackaging())) {
             List<Pattern> excludeREList;
             try {
                 excludeREList = getExcludedRegExpList();
