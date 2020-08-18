@@ -14,9 +14,8 @@ import org.apache.maven.project.MavenProject;
 import org.codehaus.plexus.util.FileUtils;
 import org.codehaus.plexus.util.xml.Xpp3Dom;
 
-import java.io.*;
+import java.io.File;
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.Collection;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -32,14 +31,24 @@ public class GenPackageList extends AbstractMojo {
     public void execute() throws MojoExecutionException, MojoFailureException {
         String sourceDir = mavenProject.getModel().getBuild().getSourceDirectory();
         String targetDir = mavenProject.getModel().getBuild().getDirectory();
-        if (mavenProject.getModel().getParent() != null) {
+        if (!"pom".equals(mavenProject.getPackaging())) {
             List<Pattern> excludeREList;
+            String strDestDir = null;
             try {
-                excludeREList = getExcludedRegExpList();
+                Xpp3Dom configDom = getJavadocPluginConfiguration();
+                excludeREList = getExcludedRegExpList(configDom);
+                Xpp3Dom destDirDom = configDom.getChild("destDir");
+                if (destDirDom != null) {
+                    strDestDir = destDirDom.getValue();
+                    // It is not documented whether getValue() could return null or not.
+                    if (strDestDir != null && strDestDir.length() == 0) {
+                        strDestDir = null;
+                    }
+                }
             } catch (Exception e) {
                 excludeREList = null;
                 getLog().warn(
-                        "Could not obtain the configuration for excluded packages from the maven-javadoc-plugin.");
+                        "Could not obtain the configuration from the maven-javadoc-plugin.");
             }
             try {
                 JavaProjectBuilder javaProjectBuilder = new JavaProjectBuilder();
@@ -54,8 +63,14 @@ public class GenPackageList extends AbstractMojo {
                         }
                         packageNames.add(pkgName);
                     }
-                    new File(targetDir.concat("/apidocs")).mkdirs();
-                    FileUtils.fileWrite(targetDir.concat("/apidocs/package-list"), String.join("\n", packageNames));
+                    File destDir;
+                    if (strDestDir == null) {
+                        destDir = new File(targetDir, "apidocs");
+                    } else {
+                        destDir = new File(strDestDir);
+                    }
+                    destDir.mkdirs();
+                    FileUtils.fileWrite(new File(destDir, "package-list"), String.join("\n", packageNames));
                     getLog().info("Created package-list");
                 } else {
                     getLog().info("Skipping package-list since no packages were found.");
@@ -71,43 +86,52 @@ public class GenPackageList extends AbstractMojo {
      * {@code excludePackageNames} configuration of the
      * {@code maven-javadoc-plugin}.
      * 
+     * @param configDom the configuration of the {@code maven-javadoc-plugin}.
      * @return the list of excluded regexp patterns, or {@code null} if there are no
      *         excluded packages.
      */
-    private List<Pattern> getExcludedRegExpList() {
+    private List<Pattern> getExcludedRegExpList(Xpp3Dom configDom) {
         List<Pattern> excludeREList = null;
+        Xpp3Dom epnDom = configDom.getChild("excludePackageNames");
+        if (epnDom != null) {
+            String excludePackageNames = epnDom.getValue();
+            if (excludePackageNames != null && excludePackageNames.length() != 0) {
+                String[] excludedList = excludePackageNames.split("[,:;]");
+                for (String excludeStr : excludedList) {
+                    String reStr = convertExcludeToRegExp(excludeStr);
+                    try {
+                        Pattern excludeRE = Pattern.compile(reStr);
+                        if (excludeREList == null) {
+                            excludeREList = new ArrayList<Pattern>();
+                        }
+                        excludeREList.add(excludeRE);
+                    } catch (PatternSyntaxException e) {
+                        getLog().warn("Unable to process exclusion " + excludeStr + '.');
+                    }
+                }
+            }
+        }
+        return excludeREList;
+    }
+
+    /**
+     * Obtains the configuration of the {@code maven-javadoc-plugin}.
+     * 
+     * @return the configuration, or {@code null} if it could not be found.
+     */
+    private Xpp3Dom getJavadocPluginConfiguration() {
         Build build = mavenProject.getModel().getBuild();
         List<Plugin> plugins;
         if (build != null && (plugins = build.getPlugins()) != null) {
             for (Plugin plugin : plugins) {
                 String groupId = plugin.getGroupId();
                 String artifactId = plugin.getArtifactId();
-                if ("org.apache.maven.plugins".equals(groupId) && "maven-javadoc-plugin".equals(artifactId)) {
-                    Xpp3Dom configDom = (Xpp3Dom) plugin.getConfiguration();
-                    Xpp3Dom epnDom = configDom.getChild("excludePackageNames");
-                    if (epnDom != null) {
-                        String excludePackageNames = epnDom.getValue();
-                        if (excludePackageNames != null) {
-                            List<String> excludedList = Arrays.asList(excludePackageNames.split("[,:;]"));
-                            for (String excludeStr : excludedList) {
-                                String reStr = convertExcludeToRegExp(excludeStr);
-                                try {
-                                    Pattern excludeRE = Pattern.compile(reStr);
-                                    if (excludeREList == null) {
-                                        excludeREList = new ArrayList<Pattern>();
-                                    }
-                                    excludeREList.add(excludeRE);
-                                } catch (PatternSyntaxException e) {
-                                    getLog().warn("Unable to process exclusion " + excludeStr + '.');
-                                }
-                            }
-                        }
-                    }
-                    break;
+                if ("maven-javadoc-plugin".equals(artifactId) && "org.apache.maven.plugins".equals(groupId)) {
+                    return (Xpp3Dom) plugin.getConfiguration();
                 }
             }
         }
-        return excludeREList;
+        return null;
     }
 
     /**
