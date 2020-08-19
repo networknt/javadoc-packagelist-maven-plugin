@@ -1,6 +1,9 @@
 package com.networknt.javadoc.plugin.packagelist;
 
 import com.thoughtworks.qdox.JavaProjectBuilder;
+import com.thoughtworks.qdox.model.JavaModule;
+import com.thoughtworks.qdox.model.JavaModuleDescriptor;
+import com.thoughtworks.qdox.model.JavaModuleDescriptor.JavaExports;
 import com.thoughtworks.qdox.model.JavaPackage;
 
 import org.apache.maven.model.Build;
@@ -17,6 +20,7 @@ import org.codehaus.plexus.util.xml.Xpp3Dom;
 import java.io.File;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -32,8 +36,9 @@ public class GenPackageList extends AbstractMojo {
         String sourceDir = mavenProject.getModel().getBuild().getSourceDirectory();
         String targetDir = mavenProject.getModel().getBuild().getDirectory();
         if (!"pom".equals(mavenProject.getPackaging())) {
-            List<Pattern> excludeREList;
-            String strDestDir = null;
+            // Obtain maven-javadoc-plugin configuration.
+            List<Pattern> excludeREList; // Excluded packages (regular expressions).
+            String strDestDir = null; // Optional destination directory.
             try {
                 Xpp3Dom configDom = getJavadocPluginConfiguration();
                 excludeREList = getExcludedRegExpList(configDom);
@@ -51,18 +56,30 @@ public class GenPackageList extends AbstractMojo {
                         "Could not obtain the configuration from the maven-javadoc-plugin.");
             }
             try {
-                JavaProjectBuilder javaProjectBuilder = new JavaProjectBuilder();
-                javaProjectBuilder.addSourceTree(new File(sourceDir));
-                Collection<JavaPackage> packages = javaProjectBuilder.getPackages();
-                if (packages != null && packages.size() > 0) {
-                    List<String> packageNames = new ArrayList<>();
-                    for (JavaPackage javaPackage : packages) {
-                        String pkgName = javaPackage.getName();
-                        if (excludeREList != null && excludeMatch(excludeREList, pkgName)) {
-                            continue;
+                File fSourceDir = new File(sourceDir);
+                // First, try to obtain exported packages from module declaration.
+                List<String> packageNames = getExportedPackages(fSourceDir);
+                if (packageNames.isEmpty()) {
+                    // Not a modular project.
+                    JavaProjectBuilder javaProjectBuilder = new JavaProjectBuilder();
+                    javaProjectBuilder.addSourceTree(fSourceDir);
+                    Collection<JavaPackage> packages = javaProjectBuilder.getPackages();
+                    if (packages != null && packages.size() > 0) {
+                        for (JavaPackage javaPackage : packages) {
+                            packageNames.add(javaPackage.getName());
                         }
-                        packageNames.add(pkgName);
                     }
+                }
+                // Remove excluded packages.
+                Iterator<String> it = packageNames.iterator();
+                while (it.hasNext()) {
+                    String pkgName = it.next();
+                    if (excludeREList != null && excludeMatch(excludeREList, pkgName)) {
+                        it.remove();
+                    }
+                }
+                // If we got the packages, write the list.
+                if (!packageNames.isEmpty()) {
                     File destDir;
                     if (strDestDir == null) {
                         destDir = new File(targetDir, "apidocs");
@@ -174,6 +191,45 @@ public class GenPackageList extends AbstractMojo {
             }
         }
         return false;
+    }
+
+    /**
+     * Get the packages exported by a module.
+     * <p>
+     * In case this is a modular project, obtain the list of exported packages.
+     * </p>
+     * 
+     * @param sourceDir the source directory.
+     * @return the list of exported packages.
+     */
+    private List<String> getExportedPackages(File sourceDir) {
+        List<String> packageNames = new ArrayList<>();
+        try {
+            JavaProjectBuilder javaProjectBuilder = new JavaProjectBuilder();
+            javaProjectBuilder.addSourceFolder(sourceDir);
+            Collection<JavaModule> modules = javaProjectBuilder.getModules();
+            if (modules != null && modules.size() != 0) {
+                for (JavaModule module : modules) {
+                    JavaModuleDescriptor descriptor = module.getDescriptor();
+                    if (descriptor != null) {
+                        Collection<JavaExports> exports = descriptor.getExports();
+                        // With the current implementation, 'exports' cannot be null,
+                        // but this is not documented so no effective API contract.
+                        if (exports != null) {
+                            for (JavaExports export : exports) {
+                                packageNames.add(export.getSource().getName());
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        } catch (Exception e) {
+            // That's probably a problem parsing module-info, so we log the exception at debug level.
+            getLog().warn("Found a problem processing the module-info file in " + sourceDir.getPath());
+            getLog().debug(e);
+        }
+        return packageNames;
     }
 
 }
